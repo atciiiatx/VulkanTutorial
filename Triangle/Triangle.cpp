@@ -1,13 +1,14 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <iostream>
-#include <stdexcept>
-#include <functional>
+#include <algorithm>
 #include <cstdlib>
-#include <string>
+#include <functional>
+#include <iostream>
 #include <optional>
 #include <set>
+#include <stdexcept>
+#include <string>
 
 class QueueFamilyIndices {
 public:
@@ -27,8 +28,8 @@ public:
 
 class HelloTriangleApplication {
 public:
-	const int WindowWidth = 800;
-	const int WindowHeight = 600;
+	const uint32_t WindowWidth = 800;
+	const uint32_t WindowHeight = 600;
 	const std::string AppName = "Vulkan Triangle";
 	const std::vector<const char*> validationLayers = {
 		"VK_LAYER_KHRONOS_validation"
@@ -59,6 +60,10 @@ private:
 	VkQueue m_GraphicsQueue = nullptr;
 	VkQueue m_PresentQueue = nullptr;
 	VkSurfaceKHR m_Surface = nullptr;
+	VkSwapchainKHR m_SwapChain = nullptr;
+	std::vector<VkImage> m_SwapChainImages;
+	VkFormat m_SwapChainFormat;
+	VkExtent2D m_SwapChainExtent;
 
 	void initWindow() {
 		glfwInit();
@@ -73,6 +78,7 @@ private:
 		createSurface();
 		pickPhysicalDevice();
 		createLogicalDevice();
+		createSwapChain();
 	}
 
 	void pickPhysicalDevice()
@@ -481,6 +487,128 @@ private:
 		}
 	}
 
+	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> formats)
+	{
+		VkSurfaceFormatKHR sFormat = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
+		if (formats.size() > 1 || formats[0].format != VK_FORMAT_UNDEFINED)
+		{
+			bool found = false;
+			for (const auto& f : formats)
+			{
+				if (f.format == VK_FORMAT_B8G8R8A8_UNORM && f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+				{
+					sFormat = f;
+					found = true;
+					break;
+				}
+			}
+			if (!found)
+			{
+				sFormat = formats[0];
+			}
+		}
+		std::cout << "chooseSwapSurfaceFormat: " << sFormat.colorSpace << " " << sFormat.format << std::endl;
+		return sFormat;
+	}
+
+	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> modes)
+	{
+		VkPresentModeKHR bestMode = VK_PRESENT_MODE_FIFO_KHR;
+		for (const auto& m : modes)
+		{
+			if (m == VK_PRESENT_MODE_MAILBOX_KHR)
+			{
+				bestMode = m;
+				break;
+			}
+			else if (m == VK_PRESENT_MODE_IMMEDIATE_KHR)
+			{
+				bestMode = m;
+			}
+		}
+		std::cout << "chooseSwapPresentMode: " << bestMode << std::endl;
+		return bestMode;
+	}
+
+	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
+	{
+		VkExtent2D extent = capabilities.currentExtent;
+		if (capabilities.currentExtent.width == std::numeric_limits<uint32_t>::max())
+		{
+			// Can set extent to other than window resolution
+			extent = { WindowWidth, WindowHeight };
+			extent.width = (extent.width < capabilities.minImageExtent.width)? 
+				capabilities.minImageExtent.width : extent.width;
+			extent.width = (extent.width > capabilities.maxImageExtent.width)? 
+				capabilities.maxImageExtent.width : extent.width;
+
+			extent.height = (extent.height < capabilities.minImageExtent.height)? 
+				capabilities.minImageExtent.height : extent.height;
+			extent.height = (extent.height > capabilities.maxImageExtent.height) ?
+				capabilities.maxImageExtent.height : extent.height;
+		}
+		std::cout << "chooseSwapExtent: " << extent.width << " " << extent.height << std::endl;
+		return extent;
+	}
+
+	void createSwapChain()
+	{
+		auto swapChainSupport = querySwapChainSupport(m_PhysicalDevice);
+		auto swapSurfFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
+		auto swapPresentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
+		auto swapExtent = chooseSwapExtent(swapChainSupport.capabilities);
+
+		auto imageCount = (swapChainSupport.capabilities.maxImageCount == 0) ?
+			swapChainSupport.capabilities.minImageCount + 1 : swapChainSupport.capabilities.maxImageCount;
+
+		VkSwapchainCreateInfoKHR createInfo = {};
+		createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+		createInfo.surface = m_Surface;
+		createInfo.minImageCount = imageCount;
+		createInfo.imageFormat = swapSurfFormat.format;
+		createInfo.imageColorSpace = swapSurfFormat.colorSpace;
+		createInfo.presentMode = swapPresentMode;
+		createInfo.imageExtent = swapExtent;
+		createInfo.imageArrayLayers = 1;
+		createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		createInfo.pNext = nullptr;
+
+		QueueFamilyIndices indices = findQueueFamilies(m_PhysicalDevice);
+		if (indices.m_GraphicsFamily != indices.m_PresentFamily)
+		{
+			createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+			createInfo.queueFamilyIndexCount = 2;
+			uint32_t queueFamilyIndices[] = { indices.m_GraphicsFamily.value(), indices.m_PresentFamily.value() };
+			createInfo.pQueueFamilyIndices = queueFamilyIndices;
+		}
+		else
+		{
+			createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			createInfo.queueFamilyIndexCount = 0;
+			createInfo.pQueueFamilyIndices = nullptr;
+		}
+
+		createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+		createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+		createInfo.clipped = VK_TRUE;
+		createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+		if (vkCreateSwapchainKHR(m_Device, &createInfo, nullptr, &m_SwapChain) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Trouble creating swap chain.");
+		}
+		std::cout << "Created swap chain." << std::endl;
+
+		imageCount = 0;
+		vkGetSwapchainImagesKHR(m_Device, m_SwapChain, &imageCount, nullptr);
+		m_SwapChainImages.resize(imageCount);
+		vkGetSwapchainImagesKHR(m_Device, m_SwapChain, &imageCount, m_SwapChainImages.data());
+		std::cout << "Got " << imageCount << " swap chain images" << std::endl;
+		
+		m_SwapChainFormat = swapSurfFormat.format;
+		m_SwapChainExtent = swapExtent;
+	}
+
 	void mainLoop() {
 		while (!glfwWindowShouldClose(m_Window))
 		{
@@ -489,6 +617,7 @@ private:
 	}
 
 	void cleanup() {
+		vkDestroySwapchainKHR(m_Device, m_SwapChain, nullptr);
 		if (enableValidationLayers)
 		{
 			DestroyDebugUtilsMessengerEXT(m_Instance, nullptr, m_DebugMessenger);
