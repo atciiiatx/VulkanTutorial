@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <functional>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <set>
@@ -81,6 +82,7 @@ private:
 		createLogicalDevice();
 		createSwapChain();
 		createImageViews();
+		createGraphicsPipeline();
 	}
 
 	void pickPhysicalDevice()
@@ -384,7 +386,7 @@ private:
 			funcName);
 		if (func != nullptr)
 		{
-			std::cout << "Found function " << funcName << std::endl;
+			//std::cout << "Found function " << funcName << std::endl;
 			func(instance, pDebugMessenger, pAllocator);
 		}
 		else
@@ -640,6 +642,66 @@ private:
 			std::cout << "Created image view " << i << "." << std::endl;
 
 		}
+	}
+
+	static std::vector<char> readFile(const std::string& fileName)
+	{
+		std::ifstream file(fileName, std::ios::ate | std::ios::binary);
+		if (!file.is_open())
+		{
+			throw std::runtime_error("readFile: Can't open file " + fileName + ".");
+		}
+		auto fileSize = static_cast<size_t>(file.tellg());
+		std::vector<char> buffer(fileSize);
+		file.seekg(0);
+		file.read(buffer.data(), fileSize);
+		file.close();
+		std::cout << "Read file " << fileName << std::endl;
+		return buffer;
+	}
+
+	VkShaderModule createShaderModule(const std::vector<char>& code)
+	{
+		VkShaderModuleCreateInfo createInfo = {};
+		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		createInfo.codeSize = code.size();
+		createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+		createInfo.pNext = nullptr;
+
+		VkShaderModule module;
+		if (vkCreateShaderModule(m_Device, &createInfo, nullptr, &module) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Can't create shader module");
+		}
+		return module;
+	}
+
+	void createGraphicsPipeline()
+	{
+		auto vertShader = readFile("Shaders/vert.spv");
+		auto fragShader = readFile("Shaders/frag.spv");
+
+		auto vertShaderModule = createShaderModule(vertShader);
+		auto fragShaderModule = createShaderModule(fragShader);
+
+		VkPipelineShaderStageCreateInfo vsCreateInfo = {};
+		vsCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		vsCreateInfo.module = vertShaderModule;
+		vsCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		vsCreateInfo.pName = "main";
+		vsCreateInfo.pNext = nullptr;
+
+		VkPipelineShaderStageCreateInfo fsCreateInfo = {};
+		fsCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fsCreateInfo.module = fragShaderModule;
+		fsCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		fsCreateInfo.pName = "main";
+		fsCreateInfo.pNext = nullptr;
+
+		VkPipelineShaderStageCreateInfo shaderStages[] = { vsCreateInfo, fsCreateInfo };
+
+		vkDestroyShaderModule(m_Device, fragShaderModule, nullptr);
+		vkDestroyShaderModule(m_Device, vertShaderModule, nullptr);
 	}
 
 	void mainLoop() {

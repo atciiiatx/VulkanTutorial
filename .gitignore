@@ -1,3 +1,4 @@
 .vs/
 Triangle/x64/
 VulkanTest/x64/
+*.spv
