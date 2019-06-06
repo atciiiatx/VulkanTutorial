@@ -68,6 +68,7 @@ private:
 	std::vector<VkImageView> m_SwapChainImageViews;
 	VkRenderPass m_RenderPass;
 	VkPipelineLayout m_PipelineLayout;
+	VkPipeline m_Pipeline;
 
 	void initWindow() {
 		glfwInit();
@@ -803,6 +804,13 @@ private:
 			VK_COLOR_COMPONENT_R_BIT || VK_COLOR_COMPONENT_G_BIT ||
 			VK_COLOR_COMPONENT_B_BIT || VK_COLOR_COMPONENT_A_BIT;
 
+		VkPipelineColorBlendStateCreateInfo colorBlendCreateInfo = {};
+		colorBlendCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		colorBlendCreateInfo.attachmentCount = 1;
+		colorBlendCreateInfo.pAttachments = &colorBlendAttachment;
+		colorBlendCreateInfo.logicOpEnable = VK_FALSE;
+		colorBlendCreateInfo.pNext = nullptr;
+
 		VkPipelineLayoutCreateInfo pipelineCreateInfo = {};
 		pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineCreateInfo.setLayoutCount = 0;
@@ -816,7 +824,29 @@ private:
 			throw std::runtime_error("Error creating pipeline layout.");
 		}
 
-		std::cout << "Created graphics pipeline" << std::endl;
+		VkGraphicsPipelineCreateInfo gpCreateInfo = {};
+		gpCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		gpCreateInfo.stageCount = 2;
+		gpCreateInfo.pStages = shaderStages;
+		gpCreateInfo.pVertexInputState = &visCreateInfo;
+		gpCreateInfo.pColorBlendState = &colorBlendCreateInfo;
+		gpCreateInfo.pDepthStencilState = nullptr;
+		gpCreateInfo.pDynamicState = nullptr;
+		gpCreateInfo.pInputAssemblyState = &iasCreateInfo;
+		gpCreateInfo.pMultisampleState = &msCreateInfo;
+		gpCreateInfo.pRasterizationState = &rasterCreateInfo;
+		gpCreateInfo.pViewportState = &viewportStateCreateInfo;
+		gpCreateInfo.layout = m_PipelineLayout;
+		gpCreateInfo.renderPass = m_RenderPass;
+		gpCreateInfo.subpass = 0;
+		gpCreateInfo.pNext = nullptr;
+		gpCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
+		gpCreateInfo.basePipelineIndex = -1;
+		if (vkCreateGraphicsPipelines(m_Device, VK_NULL_HANDLE, 1, &gpCreateInfo, nullptr, &m_Pipeline) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Can't create graphics pipeline.");
+		}
+		std::cout << "Created graphics pipeline." << std::endl;
 
 		vkDestroyShaderModule(m_Device, fragShaderModule, nullptr);
 		vkDestroyShaderModule(m_Device, vertShaderModule, nullptr);
@@ -830,6 +860,7 @@ private:
 	}
 
 	void cleanup() {
+		vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
 		vkDestroyRenderPass(m_Device, m_RenderPass, nullptr);
 		vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
 		for (auto& iv : m_SwapChainImageViews)
